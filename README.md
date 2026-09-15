@@ -118,7 +118,7 @@ you can actually write to rather than a subdomain of the platform.
 
 If you are adopting this over an existing implementation, set these to match the records
 your tenants have already created. Changing them on a live platform invalidates every
-domain already verified. See [docs/adoption.md](docs/adoption.md).
+domain already verified.
 
 With the defaults, that means creating one record in your own zone: `to.yourapp.com`,
 pointing at your ingress.
