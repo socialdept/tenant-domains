@@ -1,0 +1,62 @@
+{
+    "name": "socialdept/tenant-domains",
+    "description": "Custom domains for multi-tenant Laravel apps: ownership, DNS instructions, ACME delegation and certificates",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/socialdept/tenant-domains",
+    "keywords": [
+        "Laravel",
+        "Multi-tenancy",
+        "Custom Domains",
+        "DNS",
+        "ACME",
+        "Caddy"
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "illuminate/database": "^11.0|^12.0|^13.0",
+        "illuminate/console": "^11.0|^12.0|^13.0",
+        "illuminate/http": "^11.0|^12.0|^13.0",
+        "jeremykendall/php-domain-parser": "^6.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "phpunit/phpunit": "^11.0|^12.0",
+        "friendsofphp/php-cs-fixer": "^3.89",
+        "stancl/tenancy": "^3.9"
+    },
+    "suggest": {
+        "stancl/tenancy": "Required for the packaged Domain model and tenant resolution (^3.9)"
+    },
+    "autoload": {
+        "psr-4": {
+            "SocialDept\\TenantDomains\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SocialDept\\TenantDomains\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "format": "php-cs-fixer fix",
+        "format:check": "php-cs-fixer fix --dry-run --diff"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "SocialDept\\TenantDomains\\TenantDomainsServiceProvider"
+            ],
+            "aliases": {
+                "TenantDomains": "SocialDept\\TenantDomains\\Facades\\TenantDomains"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
