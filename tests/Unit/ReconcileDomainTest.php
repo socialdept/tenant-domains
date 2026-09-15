@@ -208,6 +208,45 @@ class ReconcileDomainTest extends TestCase
         Event::assertNotDispatched(DomainVerified::class);
     }
 
+    /**
+     * A proxied domain cannot be proven by DNS, so the probe decides. Before
+     * this, ownership was proven and then routing could never pass, which left
+     * every orange-clouded customer stuck at setup with advice that led nowhere.
+     */
+    #[Test]
+    public function a_proxied_domain_is_carried_to_the_probe_rather_than_stalled(): void
+    {
+        Event::fake();
+        $domain = $this->domain(ownershipProven: true);
+
+        $proxied = new ArrayResolver(['blog.example.com' => ['A' => '104.16.0.1']]);
+
+        $result = $this->reconcile($domain, $proxied);
+
+        $this->assertSame(ReconcileOutcome::Advanced, $result->outcome);
+        $this->assertSame(DomainStatus::Confirming, $domain->fresh()->status);
+        $this->ingress->assertPublished('blog.example.com');
+    }
+
+    /**
+     * With no probe there is nothing left that could prove a proxied domain
+     * points at us, and ownership alone must never put one in service.
+     */
+    #[Test]
+    public function a_proxied_domain_is_refused_when_the_probe_is_disabled(): void
+    {
+        config()->set('tenant-domains.reachability.enabled', false);
+
+        $domain = $this->domain(ownershipProven: true);
+
+        $result = $this->reconcile($domain, new ArrayResolver(['blog.example.com' => ['A' => '104.16.0.1']]));
+
+        $this->assertSame(ReconcileOutcome::Waiting, $result->outcome);
+        $this->assertSame(DomainStatus::Pending, $domain->fresh()->status);
+        $this->ingress->assertNothingPublished();
+        $this->assertStringContainsString('DNS only', $domain->fresh()->last_failure_reason);
+    }
+
     /* Idempotency
      * - - - - - - - - - - - - - */
 

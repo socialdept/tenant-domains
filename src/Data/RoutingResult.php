@@ -23,6 +23,7 @@ final class RoutingResult
         public readonly ?string $expectedCname = null,
         public readonly array $expectedIps = [],
         public readonly ?string $hint = null,
+        public readonly bool $proxied = false,
     ) {
         //
     }
@@ -51,6 +52,32 @@ final class RoutingResult
     }
 
     /**
+     * The records exist but sit behind a proxy, so their target is invisible.
+     *
+     * Deliberately not `verified`. Nothing has been proven, and the caller has to
+     * decide whether it has another way to settle the question. A real request is
+     * the only one that works, so anything without a reachability probe should
+     * treat this as unresolved rather than waving it through.
+     *
+     * @param  array<int, string>  $expectedIps
+     */
+    public static function proxied(
+        ?string $resolved,
+        ?string $expectedCname,
+        array $expectedIps = [],
+        ?string $hint = null,
+    ): self {
+        return new self(
+            verified: false,
+            resolved: $resolved,
+            expectedCname: $expectedCname,
+            expectedIps: $expectedIps,
+            hint: $hint,
+            proxied: true,
+        );
+    }
+
+    /**
      * Whether something answers at this name, but not us.
      *
      * Worth distinguishing: an existing wrong record usually means an old host
@@ -59,6 +86,11 @@ final class RoutingResult
      */
     public function resolvesElsewhere(): bool
     {
-        return ! $this->verified && $this->resolved !== null;
+        return ! $this->verified && ! $this->proxied && $this->resolved !== null;
+    }
+
+    public function isProxied(): bool
+    {
+        return $this->proxied;
     }
 }

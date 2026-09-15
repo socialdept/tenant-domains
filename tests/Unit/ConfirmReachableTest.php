@@ -84,6 +84,60 @@ class ConfirmReachableTest extends TestCase
     }
 
     /**
+     * A redirect back to the same host cannot have happened unless the request
+     * reached us, which is the only thing this probe proves. An app that sends
+     * `/` to `/dashboard` is not intercepting itself.
+     */
+    #[Test]
+    public function a_same_host_redirect_counts_as_reachable(): void
+    {
+        Http::fake([
+            'https://example.com/' => Http::response('', 302, ['Location' => 'https://example.com/dashboard']),
+        ]);
+
+        $this->assertTrue((new ConfirmReachable())->probe(['https://example.com/'])->reachable);
+    }
+
+    /**
+     * The case that made the probe unusable in a real app. A tenant platform
+     * that 301s every non-primary hostname to the publication's primary would
+     * read its own redirect as an interception, so no domain could ever finish.
+     */
+    #[Test]
+    public function a_redirect_to_a_host_the_app_claims_counts_as_reachable(): void
+    {
+        Http::fake([
+            'https://custom.example/' => Http::response('', 301, ['Location' => 'https://mypub.platform.test/']),
+        ]);
+
+        $probe = new ConfirmReachable(
+            acceptRedirectTo: fn (string $target): bool => str_ends_with($target, '.platform.test'),
+        );
+
+        $this->assertTrue($probe->probe(['https://custom.example/'])->reachable);
+    }
+
+    /**
+     * Claiming your own domains must not claim everyone else's.
+     */
+    #[Test]
+    public function a_redirect_the_app_does_not_claim_still_fails(): void
+    {
+        Http::fake([
+            'https://custom.example/' => Http::response('', 301, ['Location' => 'https://their-old-host.example/']),
+        ]);
+
+        $probe = new ConfirmReachable(
+            acceptRedirectTo: fn (string $target): bool => str_ends_with($target, '.platform.test'),
+        );
+
+        $result = $probe->probe(['https://custom.example/']);
+
+        $this->assertFalse($result->reachable);
+        $this->assertStringContainsString('their-old-host.example', $result->reason);
+    }
+
+    /**
      * A domain doing two jobs is asked both ways: they are separate routes at
      * the edge, and a rule can intercept one while leaving the other alone.
      */

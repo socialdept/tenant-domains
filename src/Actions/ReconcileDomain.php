@@ -108,6 +108,20 @@ class ReconcileDomain
 
         $routing = $this->domains->verifyRouting($domain);
 
+        // DNS cannot see past a proxy, so the probe is the only thing that can
+        // settle this. Without one there is nothing left to prove it, and
+        // ownership alone must never be enough to put a domain in service.
+        if ($routing->isProxied()) {
+            if (! config('tenant-domains.reachability.enabled', true)) {
+                $reason = 'This domain is proxied, so its records cannot be read. Set it to DNS only while it is being set up.';
+                $this->recordFailure($domain, $reason, $dryRun);
+
+                return ReconcileResult::waiting($reason);
+            }
+
+            return null;
+        }
+
         if (! $routing->verified) {
             $reason = $routing->hint
                 ?? ($routing->resolvesElsewhere()

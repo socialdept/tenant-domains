@@ -35,6 +35,9 @@ class TenantDomainsServiceProvider extends ServiceProvider
         $this->app->bind(ZoneDriver::class, fn ($app) => $app->make(DriverManager::class)->zone());
         $this->app->bind(IngressDriver::class, fn ($app) => $app->make(DriverManager::class)->ingress());
 
+        // Rebind this to claim your own redirects. An app that sends unverified
+        // hostnames anywhere of its own needs to, or the probe reads that as an
+        // interception and no domain ever finishes.
         $this->app->singleton(ReachabilityProbe::class, fn () => new ConfirmReachable(
             (int) config('tenant-domains.reachability.timeout', 8),
         ));

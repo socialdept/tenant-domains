@@ -22,6 +22,11 @@ use Throwable;
  * Redirects are deliberately **not followed**. A redirect is the failure being
  * hunted, and following one hides it behind a destination that may well answer
  * 200.
+ *
+ * Not every redirect is hostile, though. A same-host redirect proves the request
+ * arrived, and many apps legitimately send an unverified hostname somewhere else
+ * of their own. Supply `$acceptRedirectTo` to claim those, or a tenant that
+ * redirects non-primary domains to its primary can never finish setup.
  */
 class ConfirmReachable implements ReachabilityProbe
 {
@@ -29,6 +34,13 @@ class ConfirmReachable implements ReachabilityProbe
         private readonly int $timeout = 8,
         /** Optional extra check on the body, for an app that can recognise itself. */
         private readonly ?\Closure $expectation = null,
+        /**
+         * Given the redirect's target host and the host being probed, whether
+         * that redirect is the app's own. Same-host redirects always count.
+         *
+         * @var (\Closure(string, string): bool)|null
+         */
+        private readonly ?\Closure $acceptRedirectTo = null,
     ) {
         //
     }
@@ -52,6 +64,22 @@ class ConfirmReachable implements ReachabilityProbe
         return $last ?? ReachabilityResult::ok();
     }
 
+    /**
+     * Whether a redirect landed somewhere we own.
+     *
+     * A redirect back to the same host is always ours: it cannot have happened
+     * unless the request reached us, which is the only thing being proven here.
+     */
+    private function redirectIsOurs(string $target, string $host): bool
+    {
+        if (strcasecmp($target, $host) === 0) {
+            return true;
+        }
+
+        return $this->acceptRedirectTo !== null
+            && ($this->acceptRedirectTo)($target, $host);
+    }
+
     private function ask(string $url): ReachabilityResult
     {
         $host = (string) parse_url($url, PHP_URL_HOST);
@@ -68,11 +96,18 @@ class ConfirmReachable implements ReachabilityProbe
         }
 
         if ($response->redirect()) {
+            $location = (string) $response->header('Location');
+            $target = (string) (parse_url($location, PHP_URL_HOST) ?: $host);
+
+            if ($this->redirectIsOurs($target, $host)) {
+                return ReachabilityResult::ok($response->status(), $url);
+            }
+
             return ReachabilityResult::failed(
                 sprintf(
                     'Requests to %s are being redirected to %s before they reach us. A redirect or page rule at your DNS provider is intercepting this domain.',
                     $host,
-                    $response->header('Location') ?: 'somewhere else',
+                    $location !== '' ? $location : 'somewhere else',
                 ),
                 status: $response->status(),
                 url: $url,

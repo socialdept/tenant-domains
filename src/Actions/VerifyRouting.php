@@ -57,16 +57,21 @@ class VerifyRouting
             return RoutingResult::verified('a_record', implode(', ', $domainIps));
         }
 
-        // A proxied record hides its target, which is not the same as wrong.
-        $hint = $this->proxies->anyIsCloudflare($domainIps)
-            ? "This domain is proxied through Cloudflare, so we cannot see where its records point. Prove ownership with the TXT record instead, or set {$domain->value} to 'DNS only' (grey cloud)."
-            : null;
+        // A proxy answers with its own addresses, so the record's target is
+        // invisible. Unknown, not wrong, and only a real request can settle it.
+        if ($this->proxies->anyIsCloudflare($domainIps)) {
+            return RoutingResult::proxied(
+                resolved: implode(', ', $domainIps),
+                expectedCname: $target,
+                expectedIps: $acceptable,
+                hint: "This domain is proxied through Cloudflare, so we cannot read its records. We will confirm it by requesting the domain itself. If that does not work, set {$domain->value} to 'DNS only' (grey cloud) while it is being set up.",
+            );
+        }
 
         return RoutingResult::failed(
             resolved: $domainIps === [] ? null : implode(', ', $domainIps),
             expectedCname: $target,
             expectedIps: $acceptable,
-            hint: $hint,
         );
     }
 
