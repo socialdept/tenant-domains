@@ -28,12 +28,11 @@ class DomainInspectionTest extends TestCase
     {
         $result = $this->inspect('example.com');
 
-        $this->assertTrue($result->isValid);
-        $this->assertTrue($result->isApex);
-        $this->assertSame('example.com', $result->apex);
-        $this->assertSame('example.com', $result->storeAs);
-        $this->assertNull($result->recordPrefix);
-        $this->assertSame('example.com', $result->registrableDomain);
+        $this->assertTrue($result->valid->ok);
+        $this->assertTrue($result->apex->isApex);
+        $this->assertSame('example.com', $result->domain);
+        $this->assertNull($result->apex->recordPrefix);
+        $this->assertSame('example.com', $result->apex->registrableDomain);
     }
 
     #[Test]
@@ -41,12 +40,12 @@ class DomainInspectionTest extends TestCase
     {
         $result = $this->inspect('blog.example.com');
 
-        $this->assertTrue($result->isValid);
-        $this->assertFalse($result->isApex);
-        $this->assertSame('blog', $result->recordPrefix);
-        $this->assertSame('blog.example.com', $result->storeAs);
-        $this->assertFalse($result->wwwIsChoosable);
-        $this->assertNull($result->wwwHost);
+        $this->assertTrue($result->valid->ok);
+        $this->assertFalse($result->apex->isApex);
+        $this->assertSame('blog', $result->apex->recordPrefix);
+        $this->assertSame('blog.example.com', $result->domain);
+        $this->assertFalse($result->www->supported);
+        $this->assertNull($result->www->host);
     }
 
     /**
@@ -57,14 +56,14 @@ class DomainInspectionTest extends TestCase
     #[Test]
     public function it_knows_multi_label_public_suffixes(): void
     {
-        $this->assertTrue($this->inspect('example.co.uk')->isApex);
-        $this->assertTrue($this->inspect('example.com.au')->isApex);
+        $this->assertTrue($this->inspect('example.co.uk')->apex->isApex);
+        $this->assertTrue($this->inspect('example.com.au')->apex->isApex);
         // Outside the twenty entries the old hand-kept table carried.
-        $this->assertTrue($this->inspect('example.com.ng')->isApex);
-        $this->assertTrue($this->inspect('example.co.ke')->isApex);
+        $this->assertTrue($this->inspect('example.com.ng')->apex->isApex);
+        $this->assertTrue($this->inspect('example.co.ke')->apex->isApex);
 
-        $this->assertFalse($this->inspect('blog.example.co.uk')->isApex);
-        $this->assertSame('blog', $this->inspect('blog.example.co.uk')->recordPrefix);
+        $this->assertFalse($this->inspect('blog.example.co.uk')->apex->isApex);
+        $this->assertSame('blog', $this->inspect('blog.example.co.uk')->apex->recordPrefix);
     }
 
     /* The www question
@@ -75,9 +74,9 @@ class DomainInspectionTest extends TestCase
     {
         $result = $this->inspect('example.com');
 
-        $this->assertTrue($result->wwwIsChoosable);
-        $this->assertSame('www.example.com', $result->wwwHost);
-        $this->assertSame(WwwRedirect::FromWww, $result->suggestedWwwRedirect);
+        $this->assertTrue($result->www->supported);
+        $this->assertSame('www.example.com', $result->www->host);
+        $this->assertSame(WwwRedirect::FromWww, $result->www->defaultRedirect);
     }
 
     /**
@@ -89,12 +88,11 @@ class DomainInspectionTest extends TestCase
     {
         $result = $this->inspect('www.example.com');
 
-        $this->assertTrue($result->isWww);
-        $this->assertSame('example.com', $result->apex);
-        $this->assertSame('example.com', $result->storeAs);
-        $this->assertSame('www.example.com', $result->wwwHost);
-        $this->assertTrue($result->wwwIsChoosable);
-        $this->assertSame(WwwRedirect::ToWww, $result->suggestedWwwRedirect);
+        $this->assertTrue($result->www->isWww);
+        $this->assertSame('example.com', $result->domain);
+        $this->assertSame('www.example.com', $result->www->host);
+        $this->assertTrue($result->www->supported);
+        $this->assertSame(WwwRedirect::ToWww, $result->www->defaultRedirect);
     }
 
     /**
@@ -106,11 +104,11 @@ class DomainInspectionTest extends TestCase
     {
         $result = $this->inspect('www.blog.example.com');
 
-        $this->assertTrue($result->isWww);
-        $this->assertSame('www.blog.example.com', $result->storeAs);
-        $this->assertFalse($result->wwwIsChoosable);
-        $this->assertNull($result->wwwHost);
-        $this->assertSame(WwwRedirect::None, $result->suggestedWwwRedirect);
+        $this->assertTrue($result->www->isWww);
+        $this->assertSame('www.blog.example.com', $result->domain);
+        $this->assertFalse($result->www->supported);
+        $this->assertNull($result->www->host);
+        $this->assertSame(WwwRedirect::None, $result->www->defaultRedirect);
     }
 
     /* Validity
@@ -121,16 +119,16 @@ class DomainInspectionTest extends TestCase
     {
         $result = $this->inspect('example');
 
-        $this->assertFalse($result->isValid);
-        $this->assertStringContainsString('full domain name', (string) $result->reason);
+        $this->assertFalse($result->valid->ok);
+        $this->assertStringContainsString('full domain name', (string) $result->valid->error);
     }
 
     #[Test]
     public function nonsense_is_refused(): void
     {
-        $this->assertFalse($this->inspect('not a domain')->isValid);
-        $this->assertFalse($this->inspect('')->isValid);
-        $this->assertFalse($this->inspect('-leading.example.com')->isValid);
+        $this->assertFalse($this->inspect('not a domain')->valid->ok);
+        $this->assertFalse($this->inspect('')->valid->ok);
+        $this->assertFalse($this->inspect('-leading.example.com')->valid->ok);
     }
 
     /**
@@ -143,9 +141,9 @@ class DomainInspectionTest extends TestCase
         foreach (['platform.test', 'someone.platform.test', 'www.platform.test'] as $host) {
             $result = $this->inspect($host);
 
-            $this->assertFalse($result->isValid, "{$host} should be refused");
+            $this->assertFalse($result->valid->ok, "{$host} should be refused");
             $this->assertTrue($result->isPlatformHost);
-            $this->assertFalse($result->wwwIsChoosable);
+            $this->assertFalse($result->www->supported);
         }
     }
 
@@ -153,13 +151,12 @@ class DomainInspectionTest extends TestCase
      * - - - - - - - - - - - - - */
 
     #[Test]
-    public function it_normalises_what_was_typed_while_keeping_the_input(): void
+    public function it_normalises_what_was_typed(): void
     {
         $result = $this->inspect('  HTTPS://Example.COM/blog  ');
 
-        $this->assertSame('  HTTPS://Example.COM/blog  ', $result->input);
         $this->assertSame('example.com', $result->host);
-        $this->assertTrue($result->isValid);
+        $this->assertTrue($result->valid->ok);
     }
 
     #[Test]
@@ -167,9 +164,11 @@ class DomainInspectionTest extends TestCase
     {
         $array = $this->inspect('www.example.com')->toArray();
 
-        $this->assertSame('example.com', $array['storeAs']);
-        $this->assertTrue($array['wwwIsChoosable']);
-        $this->assertSame('to_www', $array['suggestedWwwRedirect']);
+        $this->assertSame('example.com', $array['domain']);
+        $this->assertTrue($array['www']['supported']);
+        $this->assertSame('to_www', $array['www']['default_redirect']);
+        $this->assertTrue($array['valid']['ok']);
+        $this->assertFalse($array['apex']['is_apex']);
         $this->assertSame(json_decode(json_encode($this->inspect('www.example.com')), true), $array);
     }
 

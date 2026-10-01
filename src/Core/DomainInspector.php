@@ -2,7 +2,10 @@
 
 namespace SocialDept\TenantDomains\Core;
 
+use SocialDept\TenantDomains\Data\ApexFacts;
 use SocialDept\TenantDomains\Data\DomainInspection;
+use SocialDept\TenantDomains\Data\DomainValidity;
+use SocialDept\TenantDomains\Data\WwwFacts;
 use SocialDept\TenantDomains\Enums\WwwRedirect;
 
 /**
@@ -23,70 +26,65 @@ class DomainInspector
     public function inspect(string $input): DomainInspection
     {
         $name = DomainName::make($input);
-        $host = $name->value;
 
         $isPlatformHost = $this->platform->domain !== ''
             && $name->isUnder($this->platform->domain);
 
-        [$isValid, $reason] = $this->validate($name, $isPlatformHost);
-
-        $isWww = $name->isWww();
-        $withoutWww = $name->withoutWww();
+        $validity = $this->validate($name, $isPlatformHost);
 
         // A `www.` is only an alias when what is left is itself a registrable
         // apex. `www.blog.example.com` is a name in its own right, and treating it
         // as an alias would store a row the tenant never asked for.
-        $isWwwAlias = $isWww && $withoutWww->isApex();
+        $withoutWww = $name->withoutWww();
+        $isWwwAlias = $name->isWww() && $withoutWww->isApex();
 
         $subject = $isWwwAlias ? $withoutWww : $name;
         $subjectIsApex = $subject->isApex();
 
         return new DomainInspection(
-            input: $input,
-            host: $host,
-            isValid: $isValid,
-            reason: $reason,
-            isApex: $name->isApex(),
-            registrableDomain: $name->registrableDomain(),
-            recordPrefix: $name->recordPrefix(),
-            isWww: $isWww,
-            apex: $subjectIsApex ? $subject->value : $name->registrableDomain(),
-            storeAs: $subject->value,
-            wwwHost: $subjectIsApex ? $subject->www() : null,
-            wwwIsChoosable: $isValid && $subjectIsApex,
-            suggestedWwwRedirect: match (true) {
-                ! $subjectIsApex => WwwRedirect::None,
-                // They typed the `www.` host, so that is the address they want.
-                $isWwwAlias => WwwRedirect::ToWww,
-                default => WwwRedirect::FromWww,
-            },
+            host: $name->value,
+            domain: $subject->value,
+            valid: $validity,
+            apex: new ApexFacts(
+                isApex: $name->isApex(),
+                registrableDomain: $name->registrableDomain(),
+                recordPrefix: $name->recordPrefix(),
+            ),
+            www: new WwwFacts(
+                isWww: $name->isWww(),
+                host: $subjectIsApex ? $subject->www() : null,
+                supported: $validity->ok && $subjectIsApex,
+                defaultRedirect: match (true) {
+                    ! $subjectIsApex => WwwRedirect::None,
+                    // They typed the `www.` host, so that is the address they want.
+                    $isWwwAlias => WwwRedirect::ToWww,
+                    default => WwwRedirect::FromWww,
+                },
+            ),
             isPlatformHost: $isPlatformHost,
         );
     }
 
-    /**
-     * @return array{0: bool, 1: string|null}
-     */
-    private function validate(DomainName $name, bool $isPlatformHost): array
+    private function validate(DomainName $name, bool $isPlatformHost): DomainValidity
     {
         if ($name->value === '') {
-            return [false, 'Enter a domain name.'];
+            return DomainValidity::failed('Enter a domain name.');
         }
 
         if (! str_contains($name->value, '.')) {
-            return [false, 'Enter a full domain name, like blog.example.com.'];
+            return DomainValidity::failed('Enter a full domain name, like blog.example.com.');
         }
 
         if (! $name->isValid()) {
-            return [false, 'That is not a valid domain name.'];
+            return DomainValidity::failed('That is not a valid domain name.');
         }
 
         // Ours to hand out as subdomains. Letting a tenant register one as a
         // "custom" domain would let them claim another tenant's address.
         if ($isPlatformHost) {
-            return [false, "That domain belongs to {$this->platform->domain}."];
+            return DomainValidity::failed("That domain belongs to {$this->platform->domain}.");
         }
 
-        return [true, null];
+        return DomainValidity::ok();
     }
 }

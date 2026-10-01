@@ -34,13 +34,13 @@ class ValidCustomDomain implements ValidationRule
         // rule that runs on submit.
         $inspection = app(Domains::class)->inspect((string) $value);
 
-        if (! $inspection->isValid) {
-            $fail(str_replace('That ', 'The :attribute ', (string) $inspection->reason));
+        if (! $inspection->valid->ok) {
+            $fail(str_replace('That ', 'The :attribute ', (string) $inspection->valid->error));
 
             return;
         }
 
-        $domain = DomainName::make($inspection->storeAs);
+        $domain = DomainName::make($inspection->domain);
 
         if ($this->alreadyTaken($domain)) {
             // Never "belongs to another account", which leaks who is hosted here.
