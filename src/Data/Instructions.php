@@ -51,9 +51,9 @@ final class Instructions implements Arrayable
      * The address visitors should end up at, which is the `www.` host only when
      * the tenant has chosen that direction.
      */
-    public function canonicalHost(): string
+    public function address(): string
     {
-        return $this->wwwRedirect->canonicalHostFor($this->domain);
+        return $this->wwwRedirect->addressFor($this->domain);
     }
 
     public function record(string $purpose): ?DnsRecord
@@ -84,7 +84,7 @@ final class Instructions implements Arrayable
             'routingModeIsChoosable' => $this->routingModeIsChoosable(),
             'wwwRedirect' => $this->wwwRedirect->value,
             'wwwIsChoosable' => $this->wwwIsChoosable(),
-            'canonicalHost' => $this->canonicalHost(),
+            'address' => $this->address(),
             'requirements' => $this->requirements->toArray(),
             'providerName' => $this->providerName,
             'isCloudflare' => $this->isCloudflare,

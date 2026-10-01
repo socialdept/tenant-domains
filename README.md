@@ -146,14 +146,17 @@ allowance on hostnames nobody visits.
 Two properties on the row, and they are not the same thing:
 
 ```php
-$domain->fqdn;            // example.com   — the domain's identity in DNS
-$domain->canonical_host;  // www.example.com — the address a visitor should see
+$domain->hostname;  // example.com      the name, and where DNS records hang off
+$domain->address;   // www.example.com  where a visitor should end up
 ```
 
-`fqdn` never changes, because every record the package asks a tenant to create is computed
-relative to it: the ownership TXT belongs at `_verify.example.com` and the apex A record at
-`@`, whichever host is canonical. Build public URLs from `canonical_host` instead, or every
-link 301s on the way to the page.
+`hostname` never moves. Every record the package asks a tenant to create is computed relative
+to it, so the ownership TXT belongs at `_verify.example.com` and the apex A record at `@` no
+matter which of the two hosts visitors are sent to. Build public URLs from `address` instead,
+or every link 301s on the way to the page.
+
+Both are fully qualified, which is why neither is called `fqdn`: that says what they are and
+not which one you want.
 
 The package does not redirect. It tells you which host is canonical; serving the redirect is
 the host app's middleware, which already knows how to send a visitor to a publication's

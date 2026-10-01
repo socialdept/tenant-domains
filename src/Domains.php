@@ -65,7 +65,7 @@ class Domains
      */
     public function instructionsFor(Model $domain): Instructions
     {
-        $name = DomainName::make((string) $domain->fqdn);
+        $name = DomainName::make((string) $domain->hostname);
         $detection = $this->providers->detect($name);
 
         return Instructions::build(
@@ -144,7 +144,7 @@ class Domains
     public function verifyOwnership(Model $domain): bool
     {
         return ($this->ownership)(
-            DomainName::make((string) $domain->fqdn),
+            DomainName::make((string) $domain->hostname),
             $this->ownershipTokenFor($domain),
         );
     }
@@ -156,7 +156,7 @@ class Domains
      */
     public function verifyRouting(Model $domain): RoutingResult
     {
-        return ($this->routing)(DomainName::make((string) $domain->fqdn));
+        return ($this->routing)(DomainName::make((string) $domain->hostname));
     }
 
     /* Edge
@@ -186,7 +186,7 @@ class Domains
 
     public function certificateState(Model $domain): Data\CertificateState
     {
-        return $this->ingress->certificateState((string) $domain->fqdn);
+        return $this->ingress->certificateState((string) $domain->hostname);
     }
 
     /**
@@ -194,7 +194,7 @@ class Domains
      */
     public function bindingFor(Model $domain, ?string $origin = null): HostnameBinding
     {
-        $name = DomainName::make((string) $domain->fqdn);
+        $name = DomainName::make((string) $domain->hostname);
         $requirements = $this->requirementsFor($domain);
 
         $hostnames = [];
@@ -238,7 +238,7 @@ class Domains
      */
     public function probeUrlsFor(Model $domain): array
     {
-        $name = DomainName::make((string) $domain->fqdn);
+        $name = DomainName::make((string) $domain->hostname);
         $requirements = $this->requirementsFor($domain);
         $path = (string) config('tenant-domains.reachability.path', '/');
 

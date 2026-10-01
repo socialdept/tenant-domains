@@ -40,7 +40,7 @@ enum WwwRedirect: string
     /**
      * Whether `www.` is the address visitors should end up at.
      */
-    public function canonicalIsWww(): bool
+    public function addressIsWww(): bool
     {
         return $this === self::ToWww;
     }
@@ -52,11 +52,11 @@ enum WwwRedirect: string
      * subdomain, so a mode set on a row it does not apply to is inert rather
      * than wrong.
      */
-    public function canonicalHostFor(DomainName|string $domain): string
+    public function addressFor(DomainName|string $domain): string
     {
         $domain = $domain instanceof DomainName ? $domain : DomainName::make($domain);
 
-        return $this->canonicalIsWww() && $domain->isApex()
+        return $this->addressIsWww() && $domain->isApex()
             ? $domain->www()
             : $domain->value;
     }

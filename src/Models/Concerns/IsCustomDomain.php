@@ -22,6 +22,9 @@ use SocialDept\TenantDomains\Enums\WwwRedirect;
  * @property DomainStatus $status
  * @property RoutingMode $routing_mode
  * @property WwwRedirect|null $www_redirect
+ * @property-read string $hostname
+ * @property-read string $address
+ * @property-read DomainName $parsed_host
  * @property string|null $acme_delegation_id
  */
 trait IsCustomDomain
@@ -88,24 +91,32 @@ trait IsCustomDomain
     }
 
     /**
-     * The full hostname. A platform subdomain gets its base appended, and a custom
-     * domain is already whole.
+     * The name this row is, and the name every DNS record is computed relative to.
+     *
+     * A platform subdomain gets its base appended, and a custom domain is already
+     * whole. Never the `www.` host, even when that is the address: see
+     * {@see self::address()}.
      */
-    protected function fqdn(): Attribute
+    protected function hostname(): Attribute
     {
         return Attribute::get(fn (): string => $this->is_platform_subdomain
             ? $this->domain.'.'.$this->platform_base
             : $this->domain);
     }
 
-    protected function name(): Attribute
+    /**
+     * The hostname as a {@see DomainName}, for the questions the setup flow asks
+     * about it: apex or not, what a record's Name field should say, which zone the
+     * tenant actually edits.
+     */
+    protected function parsedHost(): Attribute
     {
-        return Attribute::get(fn (): DomainName => DomainName::make($this->fqdn));
+        return Attribute::get(fn (): DomainName => DomainName::make($this->hostname));
     }
 
     protected function isApex(): Attribute
     {
-        return Attribute::get(fn (): bool => $this->is_custom && $this->name->isApex());
+        return Attribute::get(fn (): bool => $this->is_custom && $this->parsed_host->isApex());
     }
 
     /**
@@ -113,7 +124,7 @@ trait IsCustomDomain
      */
     protected function recordPrefix(): Attribute
     {
-        return Attribute::get(fn (): ?string => $this->is_custom ? $this->name->recordPrefix() : null);
+        return Attribute::get(fn (): ?string => $this->is_custom ? $this->parsed_host->recordPrefix() : null);
     }
 
     /**
@@ -170,7 +181,7 @@ trait IsCustomDomain
      */
     protected function wwwHost(): Attribute
     {
-        return Attribute::get(fn (): ?string => $this->is_apex ? $this->name->www() : null);
+        return Attribute::get(fn (): ?string => $this->is_apex ? $this->parsed_host->www() : null);
     }
 
     /**
@@ -184,18 +195,18 @@ trait IsCustomDomain
     /**
      * The address a visitor should end up at.
      *
-     * Distinct from {@see self::fqdn()} on purpose. `fqdn` is the domain's
+     * Distinct from {@see self::hostname()} on purpose. `hostname` is the domain's
      * identity in DNS, and every record this package asks a tenant to create is
      * computed relative to it: an ownership TXT belongs at `_verify.example.com`
      * and an apex A record at `@`, whichever host visitors are redirected to. A
      * host app building public URLs wants this one, so a link does not 301 on
      * every request.
      */
-    protected function canonicalHost(): Attribute
+    protected function address(): Attribute
     {
         return Attribute::get(fn (): string => $this->is_apex
-            ? $this->www_mode->canonicalHostFor($this->name)
-            : $this->fqdn);
+            ? $this->www_mode->addressFor($this->parsed_host)
+            : $this->hostname);
     }
 
     protected function ownsOwnership(): Attribute

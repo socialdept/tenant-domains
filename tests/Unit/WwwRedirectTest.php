@@ -81,13 +81,13 @@ class WwwRedirectTest extends TestCase
     }
 
     #[Test]
-    public function the_canonical_host_is_www_only_when_pointing_at_it(): void
+    public function the_address_is_www_only_when_pointing_at_it(): void
     {
         $apex = DomainName::make('example.com');
 
-        $this->assertSame('example.com', WwwRedirect::FromWww->canonicalHostFor($apex));
-        $this->assertSame('www.example.com', WwwRedirect::ToWww->canonicalHostFor($apex));
-        $this->assertSame('example.com', WwwRedirect::None->canonicalHostFor($apex));
+        $this->assertSame('example.com', WwwRedirect::FromWww->addressFor($apex));
+        $this->assertSame('www.example.com', WwwRedirect::ToWww->addressFor($apex));
+        $this->assertSame('example.com', WwwRedirect::None->addressFor($apex));
     }
 
     /**
@@ -100,7 +100,7 @@ class WwwRedirectTest extends TestCase
     {
         $this->assertSame(
             'blog.example.com',
-            WwwRedirect::ToWww->canonicalHostFor(DomainName::make('blog.example.com')),
+            WwwRedirect::ToWww->addressFor(DomainName::make('blog.example.com')),
         );
     }
 
@@ -192,14 +192,14 @@ class WwwRedirectTest extends TestCase
     }
 
     #[Test]
-    public function the_instructions_report_the_canonical_host(): void
+    public function the_instructions_report_the_address(): void
     {
-        $this->assertSame('www.example.com', $this->build('example.com', wwwRedirect: WwwRedirect::ToWww)->canonicalHost());
-        $this->assertSame('example.com', $this->build('example.com', wwwRedirect: WwwRedirect::FromWww)->canonicalHost());
+        $this->assertSame('www.example.com', $this->build('example.com', wwwRedirect: WwwRedirect::ToWww)->address());
+        $this->assertSame('example.com', $this->build('example.com', wwwRedirect: WwwRedirect::FromWww)->address());
 
         $array = $this->build('example.com', wwwRedirect: WwwRedirect::ToWww)->toArray();
 
-        $this->assertSame('www.example.com', $array['canonicalHost']);
+        $this->assertSame('www.example.com', $array['address']);
         $this->assertSame('to_www', $array['wwwRedirect']);
         $this->assertTrue($array['wwwIsChoosable']);
     }
@@ -345,23 +345,23 @@ class WwwRedirectTest extends TestCase
     }
 
     /**
-     * `fqdn` stays the domain's identity in DNS even when visitors are sent to
+     * `hostname` stays the domain's identity in DNS even when visitors are sent to
      * `www.`. Every record the package asks for is computed relative to it, so an
      * ownership TXT belongs at `_verify.example.com` and an apex A record at `@`
      * whichever host is canonical.
      */
     #[Test]
-    public function the_canonical_host_is_separate_from_the_fqdn(): void
+    public function the_address_is_separate_from_the_hostname(): void
     {
         $toWww = $this->model('example.com', 'to_www');
 
-        $this->assertSame('example.com', $toWww->fqdn);
-        $this->assertSame('www.example.com', $toWww->canonical_host);
+        $this->assertSame('example.com', $toWww->hostname);
+        $this->assertSame('www.example.com', $toWww->address);
 
         $fromWww = $this->model('other.com', 'from_www');
 
-        $this->assertSame('other.com', $fromWww->fqdn);
-        $this->assertSame('other.com', $fromWww->canonical_host);
+        $this->assertSame('other.com', $fromWww->hostname);
+        $this->assertSame('other.com', $fromWww->address);
     }
 
     #[Test]
@@ -371,7 +371,7 @@ class WwwRedirectTest extends TestCase
 
         $this->assertNull($row->www_host);
         $this->assertFalse($row->serves_www);
-        $this->assertSame('blog.example.com', $row->canonical_host);
+        $this->assertSame('blog.example.com', $row->address);
     }
 
     #[Test]
@@ -381,7 +381,7 @@ class WwwRedirectTest extends TestCase
 
         $this->assertNull($row->www_host);
         $this->assertFalse($row->serves_www);
-        $this->assertSame('acme.platform.test', $row->canonical_host);
+        $this->assertSame('acme.platform.test', $row->address);
     }
 
     /* The serving-host scope

@@ -47,7 +47,7 @@ class ReconcileDomainsCommand extends Command
                 $result = $reconcile($domain, $dryRun);
             } catch (Throwable $e) {
                 // One domain's failure must not stop the sweep, or hide itself.
-                $this->error("{$domain->fqdn}: {$e->getMessage()}");
+                $this->error("{$domain->hostname}: {$e->getMessage()}");
 
                 report($e);
 
@@ -135,7 +135,7 @@ class ReconcileDomainsCommand extends Command
 
     private function report(Model $domain, ReconcileOutcome $outcome, ?string $detail): void
     {
-        $line = "{$domain->fqdn}".($detail !== null ? ": {$detail}" : '');
+        $line = "{$domain->hostname}".($detail !== null ? ": {$detail}" : '');
 
         match ($outcome) {
             ReconcileOutcome::Verified => $this->info("  ✓ {$line}"),

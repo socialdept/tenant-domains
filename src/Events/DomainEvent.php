@@ -19,8 +19,8 @@ abstract class DomainEvent
         //
     }
 
-    public function fqdn(): string
+    public function hostname(): string
     {
-        return (string) $this->domain->fqdn;
+        return (string) $this->domain->hostname;
     }
 }
