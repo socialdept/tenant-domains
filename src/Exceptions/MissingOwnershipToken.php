@@ -15,7 +15,7 @@ class MissingOwnershipToken extends RuntimeException
     {
         return new self(sprintf(
             'No ownership token for [%s]. Implement %s on your tenant model, or on the domain model itself. Looked for a [%s] relation on %s. Set tenant-domains.tenant_relation if yours is named differently.',
-            $domain->fqdn ?? $domain->getKey(),
+            $domain->hostname ?? $domain->getKey(),
             ProvidesOwnershipToken::class,
             $relation,
             $domain::class,

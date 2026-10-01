@@ -114,6 +114,31 @@ final class DomainName implements Stringable
     }
 
     /**
+     * The `www.` form of this host, left alone if it already is one.
+     */
+    public function www(): string
+    {
+        return $this->isWww() ? $this->value : 'www.'.$this->value;
+    }
+
+    public function isWww(): bool
+    {
+        return str_starts_with($this->value, 'www.');
+    }
+
+    /**
+     * This host with a leading `www.` removed, or unchanged when it has none.
+     *
+     * Not the same as parent(): that walks one label off any host, while this
+     * only ever strips `www`, so `www.blog.example.com` yields
+     * `blog.example.com` and `blog.example.com` yields itself.
+     */
+    public function withoutWww(): self
+    {
+        return $this->isWww() ? new self(substr($this->value, 4)) : $this;
+    }
+
+    /**
      * This host with its leftmost label removed, or null at the apex.
      *
      * What the certificate-authority endpoint uses to ask "is this one account

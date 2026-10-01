@@ -8,6 +8,7 @@ use SocialDept\TenantDomains\Core\DomainName;
 use SocialDept\TenantDomains\Core\Platform;
 use SocialDept\TenantDomains\Enums\DomainStatus;
 use SocialDept\TenantDomains\Enums\RoutingMode;
+use SocialDept\TenantDomains\Enums\WwwRedirect;
 
 /**
  * Everything a domain row needs to take part in custom-domain setup.
@@ -20,6 +21,10 @@ use SocialDept\TenantDomains\Enums\RoutingMode;
  * @property string|null $platform_base
  * @property DomainStatus $status
  * @property RoutingMode $routing_mode
+ * @property WwwRedirect|null $www_redirect
+ * @property-read string $hostname
+ * @property-read string $address
+ * @property-read DomainName $parsed_host
  * @property string|null $acme_delegation_id
  */
 trait IsCustomDomain
@@ -34,6 +39,7 @@ trait IsCustomDomain
         return [
             'status' => DomainStatus::class,
             'routing_mode' => RoutingMode::class,
+            'www_redirect' => WwwRedirect::class,
             'is_primary' => 'boolean',
             'ownership_verified_at' => 'datetime',
             'verified_at' => 'datetime',
@@ -53,6 +59,7 @@ trait IsCustomDomain
             'tenant_id',
             'status',
             'routing_mode',
+            'www_redirect',
             'is_primary',
             'acme_delegation_id',
             'ownership_verified_at',
@@ -84,24 +91,36 @@ trait IsCustomDomain
     }
 
     /**
-     * The full hostname. A platform subdomain gets its base appended, and a custom
-     * domain is already whole.
+     * The name this row is, and the name every DNS record is computed relative to.
+     *
+     * A platform subdomain gets its base appended, and a custom domain is already
+     * whole. Never the `www.` host, even when that is the address: see
+     * {@see self::address()}.
      */
-    protected function fqdn(): Attribute
+    protected function hostname(): Attribute
     {
         return Attribute::get(fn (): string => $this->is_platform_subdomain
             ? $this->domain.'.'.$this->platform_base
             : $this->domain);
     }
 
-    protected function name(): Attribute
+    /**
+     * The hostname as a {@see DomainName}, for the questions the setup flow asks
+     * about it: apex or not, what a record's Name field should say, which zone the
+     * tenant actually edits.
+     */
+    protected function parsedHost(): Attribute
     {
-        return Attribute::get(fn (): DomainName => DomainName::make($this->fqdn));
+        // INFO: Eloquent caches an accessor that returns an object, and nothing
+        // invalidates that cache when `domain` or `platform_base` changes. Without
+        // this, a row read after an update still answers for its old hostname.
+        return Attribute::get(fn (): DomainName => DomainName::make($this->hostname))
+            ->withoutObjectCaching();
     }
 
     protected function isApex(): Attribute
     {
-        return Attribute::get(fn (): bool => $this->is_custom && $this->name->isApex());
+        return Attribute::get(fn (): bool => $this->is_custom && $this->parsed_host->isApex());
     }
 
     /**
@@ -109,7 +128,7 @@ trait IsCustomDomain
      */
     protected function recordPrefix(): Attribute
     {
-        return Attribute::get(fn (): ?string => $this->is_custom ? $this->name->recordPrefix() : null);
+        return Attribute::get(fn (): ?string => $this->is_custom ? $this->parsed_host->recordPrefix() : null);
     }
 
     /**
@@ -148,6 +167,56 @@ trait IsCustomDomain
             || $this->status->isRoutable());
     }
 
+    /* www
+     * - - - - - - - - - - - - - */
+
+    /**
+     * How this domain treats its `www.` host, with a null column read as
+     * {@see WwwRedirect::None}.
+     */
+    protected function wwwMode(): Attribute
+    {
+        // INFO: an enum is an object, so this would otherwise be cached and go stale
+        // the moment `www_redirect` is updated, taking `address` and `serves_www`
+        // with it. That reads as a save that silently did nothing.
+        return Attribute::get(fn (): WwwRedirect => WwwRedirect::fromColumn($this->www_redirect))
+            ->withoutObjectCaching();
+    }
+
+    /**
+     * The `www.` hostname, or null where the concept does not apply: a platform
+     * subdomain, or a custom domain that is not an apex.
+     */
+    protected function wwwHost(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->is_apex ? $this->parsed_host->www() : null);
+    }
+
+    /**
+     * Whether the edge should serve the `www.` host as well as the domain itself.
+     */
+    protected function servesWww(): Attribute
+    {
+        return Attribute::get(fn (): bool => $this->is_apex && $this->www_mode->servesWww());
+    }
+
+    /**
+     * The address a visitor should end up at.
+     *
+     * Distinct from {@see self::hostname()} on purpose. `hostname` is the domain's
+     * identity in DNS, and every record this package asks a tenant to create is
+     * computed relative to it: an ownership TXT belongs at `_verify.example.com`
+     * and an apex A record at `@`, whichever host visitors are redirected to. A
+     * host app building public URLs wants this one, so a link does not 301 on
+     * every request.
+     */
+    protected function address(): Attribute
+    {
+        return Attribute::get(fn (): string => $this->is_apex
+            ? $this->www_mode->addressFor($this->parsed_host)
+            : $this->hostname);
+    }
+
     protected function ownsOwnership(): Attribute
     {
         return Attribute::get(fn (): bool => $this->ownership_verified_at !== null);
@@ -178,6 +247,61 @@ trait IsCustomDomain
     public function scopeWithStatus(Builder $query, DomainStatus ...$statuses): void
     {
         $query->whereIn('status', array_column($statuses, 'value'));
+    }
+
+    /**
+     * Rows that answer for a hostname: the row whose name it is, plus the apex
+     * carrying it as its `www.` alias.
+     *
+     * More than one row can match, and the caller decides which wins. A tenant
+     * who has attached `www.example.com` as a domain in its own right must not be
+     * shadowed by a different tenant's apex that happens to serve www, so order
+     * the exact match first.
+     *
+     * Custom domains only. Platform subdomains are stored as a bare label, so a
+     * caller that serves those looks them up by stripping the platform base.
+     *
+     * @param  Builder<static>  $query
+     */
+    public function scopeServingHost(Builder $query, DomainName|string $host): void
+    {
+        $name = $host instanceof DomainName ? $host : DomainName::make($host);
+        $apex = $name->withoutWww();
+
+        // Only an apex has a www alias to be. Without this, `www.blog.example.com`
+        // would match a `blog.example.com` row that never opted in.
+        $isWwwAlias = $name->isWww() && $apex->isApex();
+
+        $query->where(function (Builder $query) use ($name, $apex, $isWwwAlias): void {
+            $query->where('domain', $name->value);
+
+            if (! $isWwwAlias) {
+                return;
+            }
+
+            $query->orWhere(function (Builder $query) use ($apex): void {
+                $query->where('domain', $apex->value)
+                    ->whereNull('platform_base')
+                    ->whereIn('www_redirect', [
+                        WwwRedirect::FromWww->value,
+                        WwwRedirect::ToWww->value,
+                    ]);
+            });
+        });
+    }
+
+    /**
+     * {@see self::scopeServingHost()}, with the row whose name the host actually
+     * is ordered ahead of any apex serving it as an alias.
+     *
+     * @param  Builder<static>  $query
+     */
+    public function scopeServingHostByPrecedence(Builder $query, DomainName|string $host): void
+    {
+        $name = $host instanceof DomainName ? $host : DomainName::make($host);
+
+        $query->servingHost($name)
+            ->orderByRaw('CASE WHEN domain = ? THEN 0 ELSE 1 END', [$name->value]);
     }
 
     /**

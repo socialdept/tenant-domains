@@ -14,14 +14,17 @@ use SocialDept\TenantDomains\Contracts\ProvidesOwnershipToken;
 use SocialDept\TenantDomains\Contracts\ResolvesDomainRequirements;
 use SocialDept\TenantDomains\Core\DelegationId;
 use SocialDept\TenantDomains\Core\Detection\ProviderDetector;
+use SocialDept\TenantDomains\Core\DomainInspector;
 use SocialDept\TenantDomains\Core\DomainName;
 use SocialDept\TenantDomains\Core\Platform;
+use SocialDept\TenantDomains\Data\DomainInspection;
 use SocialDept\TenantDomains\Data\DomainRequirements;
 use SocialDept\TenantDomains\Data\HostnameBinding;
 use SocialDept\TenantDomains\Data\Instructions;
 use SocialDept\TenantDomains\Data\RoutingResult;
 use SocialDept\TenantDomains\Enums\IngressCapability;
 use SocialDept\TenantDomains\Enums\RoutingMode;
+use SocialDept\TenantDomains\Enums\WwwRedirect;
 use SocialDept\TenantDomains\Exceptions\MissingOwnershipToken;
 use SocialDept\TenantDomains\Exceptions\UnsupportedCapability;
 
@@ -59,12 +62,26 @@ class Domains
      * - - - - - - - - - - - - - */
 
     /**
+     * Everything structural about a hostname a tenant has typed, before any row
+     * exists: whether it is usable, whether it is an apex, what it would be
+     * stored as, and whether `www.` is worth asking about.
+     *
+     * Offline, so a form can call it on a keystroke. Expose it from a route and a
+     * client never has to re-derive the Public Suffix List for itself, which is
+     * the duplication this replaces.
+     */
+    public function inspect(string $host): DomainInspection
+    {
+        return (new DomainInspector($this->platform))->inspect($host);
+    }
+
+    /**
      * The records a tenant must create for a domain, and the context to explain
      * them.
      */
     public function instructionsFor(Model $domain): Instructions
     {
-        $name = DomainName::make((string) $domain->fqdn);
+        $name = DomainName::make((string) $domain->hostname);
         $detection = $this->providers->detect($name);
 
         return Instructions::build(
@@ -77,7 +94,18 @@ class Domains
             providerName: $detection['provider'],
             isCloudflare: $detection['is_cloudflare'],
             supportsApexCname: $detection['supports_apex_cname'],
+            wwwRedirect: $this->wwwRedirectFor($domain),
         );
+    }
+
+    /**
+     * How a domain treats its `www.` host, tolerating a model that has no such
+     * column: an app that never offers the choice gets {@see WwwRedirect::None}
+     * and no www record.
+     */
+    public function wwwRedirectFor(Model $domain): WwwRedirect
+    {
+        return WwwRedirect::fromColumn($domain->www_redirect ?? null);
     }
 
     /**
@@ -132,7 +160,7 @@ class Domains
     public function verifyOwnership(Model $domain): bool
     {
         return ($this->ownership)(
-            DomainName::make((string) $domain->fqdn),
+            DomainName::make((string) $domain->hostname),
             $this->ownershipTokenFor($domain),
         );
     }
@@ -144,7 +172,7 @@ class Domains
      */
     public function verifyRouting(Model $domain): RoutingResult
     {
-        return ($this->routing)(DomainName::make((string) $domain->fqdn));
+        return ($this->routing)(DomainName::make((string) $domain->hostname));
     }
 
     /* Edge
@@ -174,7 +202,7 @@ class Domains
 
     public function certificateState(Model $domain): Data\CertificateState
     {
-        return $this->ingress->certificateState((string) $domain->fqdn);
+        return $this->ingress->certificateState((string) $domain->hostname);
     }
 
     /**
@@ -182,13 +210,20 @@ class Domains
      */
     public function bindingFor(Model $domain, ?string $origin = null): HostnameBinding
     {
-        $name = DomainName::make((string) $domain->fqdn);
+        $name = DomainName::make((string) $domain->hostname);
         $requirements = $this->requirementsFor($domain);
 
         $hostnames = [];
 
         if ($requirements->root) {
             $hostnames[] = $name->value;
+        }
+
+        // The edge needs the `www.` host in the certificate as well, or the
+        // redirect to the apex cannot be served over TLS and the visitor gets a
+        // warning instead of a redirect.
+        if ($requirements->root && $name->isApex() && $this->wwwRedirectFor($domain)->servesWww()) {
+            $hostnames[] = $name->www();
         }
 
         if ($requirements->wildcard) {
@@ -219,7 +254,7 @@ class Domains
      */
     public function probeUrlsFor(Model $domain): array
     {
-        $name = DomainName::make((string) $domain->fqdn);
+        $name = DomainName::make((string) $domain->hostname);
         $requirements = $this->requirementsFor($domain);
         $path = (string) config('tenant-domains.reachability.path', '/');
 
@@ -288,6 +323,22 @@ class Domains
                 $query->where(function ($query) use ($host) {
                     $query->where('domain', $host->value)->whereNull('platform_base');
                 });
+
+                // A `www.` host has no row of its own. It is authorised by the apex
+                // that opted into serving it, and the status guard below still
+                // applies, so an unverified apex cannot certify its www either.
+                $apex = $host->withoutWww();
+
+                if ($host->isWww() && $apex->isApex()) {
+                    $query->orWhere(function ($query) use ($apex) {
+                        $query->where('domain', $apex->value)
+                            ->whereNull('platform_base')
+                            ->whereIn('www_redirect', [
+                                WwwRedirect::FromWww->value,
+                                WwwRedirect::ToWww->value,
+                            ]);
+                    });
+                }
 
                 if (! $host->isUnder($this->platform->domain) || $host->value === $this->platform->domain) {
                     return;

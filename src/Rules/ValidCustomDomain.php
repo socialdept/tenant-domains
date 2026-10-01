@@ -6,7 +6,7 @@ use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\DB;
 use SocialDept\TenantDomains\Core\DomainName;
-use SocialDept\TenantDomains\Core\Platform;
+use SocialDept\TenantDomains\Domains;
 
 /**
  * A hostname a tenant may actually claim.
@@ -29,27 +29,18 @@ class ValidCustomDomain implements ValidationRule
      */
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        $domain = DomainName::make((string) $value);
+        // The structural verdicts come from the inspector, so a form that calls
+        // `Domains::inspect()` while the tenant types can never disagree with the
+        // rule that runs on submit.
+        $inspection = app(Domains::class)->inspect((string) $value);
 
-        if (! str_contains($domain->value, '.')) {
-            $fail('The :attribute must be a full domain name, like blog.example.com.');
-
-            return;
-        }
-
-        if (! $domain->isValid()) {
-            $fail('The :attribute is not a valid domain name.');
+        if (! $inspection->valid->ok) {
+            $fail(str_replace('That ', 'The :attribute ', (string) $inspection->valid->error));
 
             return;
         }
 
-        $platform = app(Platform::class);
-
-        if ($domain->isUnder($platform->domain)) {
-            $fail("The :attribute cannot be a {$platform->domain} address.");
-
-            return;
-        }
+        $domain = DomainName::make($inspection->domain);
 
         if ($this->alreadyTaken($domain)) {
             // Never "belongs to another account", which leaks who is hosted here.
