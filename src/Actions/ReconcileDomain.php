@@ -197,18 +197,42 @@ class ReconcileDomain
         return $this->markVerified($domain, 'request', $dryRun);
     }
 
+    /**
+     * The transition to verified, exactly once.
+     *
+     * Conditional on the row not already being verified, because two passes can
+     * reach here for the same domain: a tenant clicking Verify runs the sweep's
+     * work inline, and the scheduled sweep may already hold that row in a batch
+     * it selected seconds earlier. Its in-memory status is stale by then, so the
+     * guard at the top of `__invoke` does not catch it.
+     *
+     * An unconditional save fires {@see DomainVerified} twice, and a host app
+     * listening on it mails the owner. The second mail is the one they notice.
+     */
     private function markVerified(Model $domain, string $method, bool $dryRun): ReconcileResult
     {
         if ($dryRun) {
             return ReconcileResult::verified($method);
         }
 
-        $domain->forceFill([
-            'status' => DomainStatus::Verified,
+        $attributes = [
+            'status' => DomainStatus::Verified->value,
             'verified_at' => now(),
             'last_checked_at' => now(),
             'last_failure_reason' => null,
-        ])->save();
+        ];
+
+        $transitioned = $domain->newQuery()
+            ->whereKey($domain->getKey())
+            ->where('status', '!=', DomainStatus::Verified->value)
+            ->update($attributes);
+
+        // Keep the caller's instance current either way: it decides what to show.
+        $domain->forceFill($attributes)->syncOriginal();
+
+        if ($transitioned === 0) {
+            return ReconcileResult::skipped('already verified');
+        }
 
         event(new DomainVerified($domain, $method));
 

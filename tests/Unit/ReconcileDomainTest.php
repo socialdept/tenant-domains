@@ -109,6 +109,34 @@ class ReconcileDomainTest extends TestCase
         Event::assertDispatched(DomainVerified::class);
     }
 
+    /**
+     * Two passes racing on one domain must verify it once.
+     *
+     * A tenant clicking Verify runs this inline while the five-minute sweep may
+     * already hold the row in a batch it selected seconds earlier, so the second
+     * pass carries a stale in-memory status and walks straight past the guard at
+     * the top of `__invoke`. The event it fires is what a host app mails on.
+     */
+    #[Test]
+    public function a_racing_second_pass_does_not_verify_the_domain_twice(): void
+    {
+        Event::fake();
+        Http::fake(['https://blog.example.com/' => Http::response('ok', 200)]);
+
+        $domain = $this->domain(ownershipProven: true, status: DomainStatus::Confirming);
+
+        // The sweep's copy, loaded before the interactive pass saves anything.
+        $stale = $domain->newQuery()->find($domain->getKey());
+
+        $first = $this->reconcile($domain, $this->fullyConfiguredZone());
+        $second = $this->reconcile($stale, $this->fullyConfiguredZone());
+
+        $this->assertSame(ReconcileOutcome::Verified, $first->outcome);
+        $this->assertSame(ReconcileOutcome::Skipped, $second->outcome);
+
+        Event::assertDispatchedTimes(DomainVerified::class, 1);
+    }
+
     /* The cases that cause outages
      * - - - - - - - - - - - - - */
 
