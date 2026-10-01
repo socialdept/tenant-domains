@@ -111,7 +111,11 @@ trait IsCustomDomain
      */
     protected function parsedHost(): Attribute
     {
-        return Attribute::get(fn (): DomainName => DomainName::make($this->hostname));
+        // INFO: Eloquent caches an accessor that returns an object, and nothing
+        // invalidates that cache when `domain` or `platform_base` changes. Without
+        // this, a row read after an update still answers for its old hostname.
+        return Attribute::get(fn (): DomainName => DomainName::make($this->hostname))
+            ->withoutObjectCaching();
     }
 
     protected function isApex(): Attribute
@@ -172,7 +176,11 @@ trait IsCustomDomain
      */
     protected function wwwMode(): Attribute
     {
-        return Attribute::get(fn (): WwwRedirect => WwwRedirect::fromColumn($this->www_redirect));
+        // INFO: an enum is an object, so this would otherwise be cached and go stale
+        // the moment `www_redirect` is updated, taking `address` and `serves_www`
+        // with it. That reads as a save that silently did nothing.
+        return Attribute::get(fn (): WwwRedirect => WwwRedirect::fromColumn($this->www_redirect))
+            ->withoutObjectCaching();
     }
 
     /**

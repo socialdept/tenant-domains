@@ -14,8 +14,10 @@ use SocialDept\TenantDomains\Contracts\ProvidesOwnershipToken;
 use SocialDept\TenantDomains\Contracts\ResolvesDomainRequirements;
 use SocialDept\TenantDomains\Core\DelegationId;
 use SocialDept\TenantDomains\Core\Detection\ProviderDetector;
+use SocialDept\TenantDomains\Core\DomainInspector;
 use SocialDept\TenantDomains\Core\DomainName;
 use SocialDept\TenantDomains\Core\Platform;
+use SocialDept\TenantDomains\Data\DomainInspection;
 use SocialDept\TenantDomains\Data\DomainRequirements;
 use SocialDept\TenantDomains\Data\HostnameBinding;
 use SocialDept\TenantDomains\Data\Instructions;
@@ -58,6 +60,20 @@ class Domains
 
     /* Setup
      * - - - - - - - - - - - - - */
+
+    /**
+     * Everything structural about a hostname a tenant has typed, before any row
+     * exists: whether it is usable, whether it is an apex, what it would be
+     * stored as, and whether `www.` is worth asking about.
+     *
+     * Offline, so a form can call it on a keystroke. Expose it from a route and a
+     * client never has to re-derive the Public Suffix List for itself, which is
+     * the duplication this replaces.
+     */
+    public function inspect(string $host): DomainInspection
+    {
+        return (new DomainInspector($this->platform))->inspect($host);
+    }
 
     /**
      * The records a tenant must create for a domain, and the context to explain

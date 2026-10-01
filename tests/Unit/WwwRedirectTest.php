@@ -384,6 +384,42 @@ class WwwRedirectTest extends TestCase
         $this->assertSame('acme.platform.test', $row->address);
     }
 
+    /**
+     * Changing the column has to change what the row answers.
+     *
+     * Eloquent caches an accessor that returns an object, an enum included, and
+     * nothing invalidates that cache when the underlying column is written. Without
+     * `withoutObjectCaching()` the mode, the address and `serves_www` all keep their
+     * pre-update values, so a saved choice reads back as a save that did nothing.
+     */
+    #[Test]
+    public function updating_the_column_changes_the_address_on_the_same_instance(): void
+    {
+        $row = $this->model('example.com', null);
+
+        $this->assertSame('example.com', $row->address);
+        $this->assertFalse($row->serves_www);
+
+        $row->update(['www_redirect' => WwwRedirect::ToWww]);
+
+        $this->assertSame(WwwRedirect::ToWww, $row->www_mode);
+        $this->assertSame('www.example.com', $row->address);
+        $this->assertTrue($row->serves_www);
+    }
+
+    #[Test]
+    public function renaming_the_domain_changes_the_parsed_host_on_the_same_instance(): void
+    {
+        $row = $this->model('example.com', 'to_www');
+
+        $this->assertSame('example.com', $row->parsed_host->value);
+
+        $row->update(['domain' => 'other.test']);
+
+        $this->assertSame('other.test', $row->parsed_host->value);
+        $this->assertSame('www.other.test', $row->address);
+    }
+
     /* The serving-host scope
      * - - - - - - - - - - - - - */
 
