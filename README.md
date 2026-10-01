@@ -123,6 +123,55 @@ domain already verified.
 With the defaults, that means creating one record in your own zone: `to.yourapp.com`,
 pointing at your ingress.
 
+## Serving `www.`
+
+An apex domain can also answer on its `www.` host, and the tenant chooses which of the two
+visitors end up at. Set `www_redirect` on the domain row:
+
+| Value | `example.com` | `www.example.com` |
+|---|---|---|
+| `null` *(default)* | served | not served |
+| `none` | served | not served |
+| `from_www` | served | redirects to the apex |
+| `to_www` | redirects to `www.` | served, and is the address |
+
+Opting in is what makes the package serve the host, so it is three things at once: the
+instructions gain a `www` CNAME, the edge binding gains `www.example.com` as a certificate
+subject, and the certificate authority endpoint starts authorising it.
+
+**It is deliberately off by default.** Every apex on the internet has a `www.` that resolves
+somewhere, and certifying them all unasked spends a platform's weekly Let's Encrypt
+allowance on hostnames nobody visits.
+
+Two properties on the row, and they are not the same thing:
+
+```php
+$domain->fqdn;            // example.com   — the domain's identity in DNS
+$domain->canonical_host;  // www.example.com — the address a visitor should see
+```
+
+`fqdn` never changes, because every record the package asks a tenant to create is computed
+relative to it: the ownership TXT belongs at `_verify.example.com` and the apex A record at
+`@`, whichever host is canonical. Build public URLs from `canonical_host` instead, or every
+link 301s on the way to the page.
+
+The package does not redirect. It tells you which host is canonical; serving the redirect is
+the host app's middleware, which already knows how to send a visitor to a publication's
+primary domain.
+
+To resolve an incoming request to a row, including a `www.` host that has no row of its own:
+
+```php
+// Rows that answer for this host: the exact one, plus an apex serving it as its alias.
+Domain::query()->servingHost($request->getHost())->get();
+
+// The same, with the exact row ordered first, which is the one that must win.
+Domain::query()->servingHostByPrecedence($request->getHost())->first();
+```
+
+Only an apex gets an alias. `www.blog.example.com` never matches a `blog.example.com` row,
+and a platform subdomain never carries one.
+
 ## Getting Started
 
 ### 1. Tell the package who owns a domain

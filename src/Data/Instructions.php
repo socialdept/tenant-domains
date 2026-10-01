@@ -6,6 +6,7 @@ use Illuminate\Contracts\Support\Arrayable;
 use SocialDept\TenantDomains\Core\DomainName;
 use SocialDept\TenantDomains\Core\Platform;
 use SocialDept\TenantDomains\Enums\RoutingMode;
+use SocialDept\TenantDomains\Enums\WwwRedirect;
 
 /**
  * The records a tenant must create, and the context a UI needs to explain them.
@@ -19,7 +20,7 @@ use SocialDept\TenantDomains\Enums\RoutingMode;
 final class Instructions implements Arrayable
 {
     /**
-     * @param  array<string, DnsRecord>  $records  Keyed by purpose: root, wildcard, ownership, acme.
+     * @param  array<string, DnsRecord>  $records  Keyed by purpose: root, www, wildcard, ownership, acme.
      */
     public function __construct(
         public readonly DomainName $domain,
@@ -30,8 +31,29 @@ final class Instructions implements Arrayable
         public readonly ?string $providerName = null,
         public readonly bool $isCloudflare = false,
         public readonly ?bool $supportsApexCname = null,
+        public readonly WwwRedirect $wwwRedirect = WwwRedirect::None,
     ) {
         //
+    }
+
+    /**
+     * Whether the tenant may choose how `www.` behaves.
+     *
+     * Only at the apex, for the same reason the routing mode is only choosable
+     * there: a subdomain has no `www.` worth serving.
+     */
+    public function wwwIsChoosable(): bool
+    {
+        return $this->isApex;
+    }
+
+    /**
+     * The address visitors should end up at, which is the `www.` host only when
+     * the tenant has chosen that direction.
+     */
+    public function canonicalHost(): string
+    {
+        return $this->wwwRedirect->canonicalHostFor($this->domain);
     }
 
     public function record(string $purpose): ?DnsRecord
@@ -60,6 +82,9 @@ final class Instructions implements Arrayable
             'isApex' => $this->isApex,
             'routingMode' => $this->routingMode->value,
             'routingModeIsChoosable' => $this->routingModeIsChoosable(),
+            'wwwRedirect' => $this->wwwRedirect->value,
+            'wwwIsChoosable' => $this->wwwIsChoosable(),
+            'canonicalHost' => $this->canonicalHost(),
             'requirements' => $this->requirements->toArray(),
             'providerName' => $this->providerName,
             'isCloudflare' => $this->isCloudflare,
@@ -87,6 +112,7 @@ final class Instructions implements Arrayable
         ?string $providerName = null,
         bool $isCloudflare = false,
         ?bool $supportsApexCname = null,
+        WwwRedirect $wwwRedirect = WwwRedirect::None,
     ): self {
         $records = [];
 
@@ -106,6 +132,20 @@ final class Instructions implements Arrayable
                     value: $platform->cnameTarget,
                     purpose: 'root',
                 );
+        }
+
+        // A served `www.` always takes a CNAME, even when the apex itself is on an
+        // A record: `www` is a subdomain, so every provider can CNAME it, and
+        // pointing it at the name rather than the address means it follows the
+        // apex if the ingress IP ever changes.
+        if ($requirements->root && $wwwRedirect->servesWww() && $domain->isApex()) {
+            $records['www'] = new DnsRecord(
+                type: 'CNAME',
+                name: $domain->recordName('www'),
+                host: $domain->www(),
+                value: $platform->cnameTarget,
+                purpose: 'www',
+            );
         }
 
         if ($requirements->wildcard) {
@@ -145,6 +185,7 @@ final class Instructions implements Arrayable
             providerName: $providerName,
             isCloudflare: $isCloudflare,
             supportsApexCname: $supportsApexCname,
+            wwwRedirect: $wwwRedirect,
         );
     }
 }

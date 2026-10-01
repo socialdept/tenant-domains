@@ -34,6 +34,11 @@ return new class extends Migration
 
             $table->string('status')->default('pending')->index();
             $table->string('routing_mode')->default('cname');
+
+            // How the apex treats its `www.` host. Null until the tenant chooses,
+            // which serves the apex alone.
+            $table->string('www_redirect')->nullable();
+
             $table->boolean('is_primary')->default(false);
 
             // Minted once, never regenerated: the tenant may already have

@@ -22,6 +22,7 @@ use SocialDept\TenantDomains\Data\Instructions;
 use SocialDept\TenantDomains\Data\RoutingResult;
 use SocialDept\TenantDomains\Enums\IngressCapability;
 use SocialDept\TenantDomains\Enums\RoutingMode;
+use SocialDept\TenantDomains\Enums\WwwRedirect;
 use SocialDept\TenantDomains\Exceptions\MissingOwnershipToken;
 use SocialDept\TenantDomains\Exceptions\UnsupportedCapability;
 
@@ -77,7 +78,18 @@ class Domains
             providerName: $detection['provider'],
             isCloudflare: $detection['is_cloudflare'],
             supportsApexCname: $detection['supports_apex_cname'],
+            wwwRedirect: $this->wwwRedirectFor($domain),
         );
+    }
+
+    /**
+     * How a domain treats its `www.` host, tolerating a model that has no such
+     * column: an app that never offers the choice gets {@see WwwRedirect::None}
+     * and no www record.
+     */
+    public function wwwRedirectFor(Model $domain): WwwRedirect
+    {
+        return WwwRedirect::fromColumn($domain->www_redirect ?? null);
     }
 
     /**
@@ -191,6 +203,13 @@ class Domains
             $hostnames[] = $name->value;
         }
 
+        // The edge needs the `www.` host in the certificate as well, or the
+        // redirect to the apex cannot be served over TLS and the visitor gets a
+        // warning instead of a redirect.
+        if ($requirements->root && $name->isApex() && $this->wwwRedirectFor($domain)->servesWww()) {
+            $hostnames[] = $name->www();
+        }
+
         if ($requirements->wildcard) {
             $hostnames[] = $name->wildcard();
         }
@@ -288,6 +307,22 @@ class Domains
                 $query->where(function ($query) use ($host) {
                     $query->where('domain', $host->value)->whereNull('platform_base');
                 });
+
+                // A `www.` host has no row of its own. It is authorised by the apex
+                // that opted into serving it, and the status guard below still
+                // applies, so an unverified apex cannot certify its www either.
+                $apex = $host->withoutWww();
+
+                if ($host->isWww() && $apex->isApex()) {
+                    $query->orWhere(function ($query) use ($apex) {
+                        $query->where('domain', $apex->value)
+                            ->whereNull('platform_base')
+                            ->whereIn('www_redirect', [
+                                WwwRedirect::FromWww->value,
+                                WwwRedirect::ToWww->value,
+                            ]);
+                    });
+                }
 
                 if (! $host->isUnder($this->platform->domain) || $host->value === $this->platform->domain) {
                     return;

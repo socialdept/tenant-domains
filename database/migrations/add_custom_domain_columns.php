@@ -26,6 +26,10 @@ return new class extends Migration
             $add('platform_base', fn (Blueprint $t) => $t->string('platform_base')->nullable());
             $add('status', fn (Blueprint $t) => $t->string('status')->default('pending'));
             $add('routing_mode', fn (Blueprint $t) => $t->string('routing_mode')->default('cname'));
+            // Nullable rather than defaulted to 'none': an existing row has made no
+            // choice, and reading null as None keeps that distinct from a tenant who
+            // picked it.
+            $add('www_redirect', fn (Blueprint $t) => $t->string('www_redirect')->nullable());
             $add('acme_delegation_id', fn (Blueprint $t) => $t->string('acme_delegation_id', 32)->nullable());
             $add('ownership_verified_at', fn (Blueprint $t) => $t->timestamp('ownership_verified_at')->nullable());
             $add('verified_at', fn (Blueprint $t) => $t->timestamp('verified_at')->nullable());
@@ -52,6 +56,7 @@ return new class extends Migration
                 'platform_base',
                 'status',
                 'routing_mode',
+                'www_redirect',
                 'acme_delegation_id',
                 'ownership_verified_at',
                 'verified_at',
