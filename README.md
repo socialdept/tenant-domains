@@ -204,6 +204,12 @@ or every link 301s on the way to the page.
 Both are fully qualified, which is why neither is called `fqdn`: that says what they are and
 not which one you want.
 
+When `to_www` makes the `www.` host the address, the reachability probe requests **both**
+hosts: the apex, which issues the redirect, and the `www.` host, which serves the page.
+Nothing else checks the `www.` record, so without that a tenant could choose `to_www`, never
+create it, verify green on the apex alone, and have every reader redirected to a host that
+does not resolve.
+
 The package does not redirect. It tells you which host is canonical; serving the redirect is
 the host app's middleware, which already knows how to send a visitor to a publication's
 primary domain.

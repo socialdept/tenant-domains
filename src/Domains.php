@@ -264,6 +264,16 @@ class Domains
             $urls[] = "https://{$name->value}{$path}";
         }
 
+        // When `www.` is the address, prove it answers before anything starts
+        // sending readers there. The apex is still probed above, because it is
+        // what issues the redirect, but only this catches the case that matters:
+        // a tenant chooses `to_www`, never creates the `www` record, the apex
+        // verifies green, and every visitor is then redirected to a host that
+        // does not resolve. The site is wholly down and the diagnostics are clean.
+        if ($requirements->root && $name->isApex() && $this->wwwRedirectFor($domain)->addressIsWww()) {
+            $urls[] = "https://{$name->www()}{$path}";
+        }
+
         if ($requirements->wildcard) {
             $label = Str::lower(Str::random(12));
             $urls[] = "https://{$label}.{$name->value}{$path}";

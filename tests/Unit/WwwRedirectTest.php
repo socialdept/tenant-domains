@@ -292,6 +292,54 @@ class WwwRedirectTest extends TestCase
         $this->assertFalse($this->mayIssue('example.com'));
     }
 
+    /* The reachability probe
+     * - - - - - - - - - - - - - */
+
+    /**
+     * The failure this catches is a total outage with clean diagnostics.
+     *
+     * A tenant chooses `to_www` and never creates the `www` record. Verification
+     * reads the apex, which is correct, so the domain goes green. The host app
+     * then redirects every visitor to the `www.` host, which does not resolve.
+     * Probing the address as well as the apex is the only thing between that
+     * choice and a dead site.
+     */
+    #[Test]
+    public function it_probes_the_www_host_when_that_is_the_address(): void
+    {
+        $urls = app(Domains::class)->probeUrlsFor($this->model('example.com', 'to_www'));
+
+        $this->assertSame([
+            'https://example.com/',
+            'https://www.example.com/',
+        ], $urls);
+    }
+
+    /**
+     * `from_www` keeps the apex as the address, so a www record that has not
+     * propagated yet must not block the domain from verifying.
+     */
+    #[Test]
+    public function it_probes_only_the_apex_when_the_apex_is_the_address(): void
+    {
+        $hosts = ['from_www' => 'one.example', 'none' => 'two.example', 'unchosen' => 'three.example'];
+
+        foreach ($hosts as $label => $host) {
+            $mode = $label === 'unchosen' ? null : $label;
+            $urls = app(Domains::class)->probeUrlsFor($this->model($host, $mode));
+
+            $this->assertSame(["https://{$host}/"], $urls, "mode {$label} should probe the apex alone");
+        }
+    }
+
+    #[Test]
+    public function a_subdomain_is_never_probed_at_a_www_host(): void
+    {
+        $urls = app(Domains::class)->probeUrlsFor($this->model('blog.example.com', 'to_www'));
+
+        $this->assertSame(['https://blog.example.com/'], $urls);
+    }
+
     /* The edge binding
      * - - - - - - - - - - - - - */
 
